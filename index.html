@@ -2106,4 +2106,544 @@ async function dlItem(item){
   try{
     var blob=await ensureBlob(item);
     var fname=extractFilename(item.url||'')||('newsreel_'+safe(item.sceneTitle)+'_v'+(item.variantIdx+1)+'_'+stamp()+'.jpg');
-    blob
+    blobDownload(blob,fname);
+    toast('Téléchargé : '+fname.slice(0,36));
+  }catch(e){
+    log('DL échec : '+(e.message||e),'e');
+    toast('Téléchargement impossible','err');
+  }
+}
+async function dlAll(){
+  var done=st.allItems.filter(function(i){return i.state==='done'});
+  if(!done.length)return toast('Aucune image à télécharger','warn');
+  showOverlay('Téléchargement en cours…','0 / '+done.length,'Préparation');
+  var ok=0,fail=0;
+  for(var i=0;i<done.length;i++){
+    var item=done[i];
+    updateOverlay((i+1)+' / '+done.length+' · '+(item.sceneTitle||'').slice(0,40),Math.round(100*i/done.length));
+    try{
+      var blob=await ensureBlob(item);
+      var fname=extractFilename(item.url||'')||('newsreel_'+safe(item.sceneTitle)+'_v'+(item.variantIdx+1)+'_'+stamp()+'.jpg');
+      blobDownload(blob,fname);
+      ok++;
+      await sleep(320);
+    }catch(e){
+      fail++;
+      log('DL échoué '+item.id+' : '+(e.message||e),'w');
+    }
+  }
+  updateOverlay('Terminé',ok+' téléchargée(s)'+(fail?' · '+fail+' échec(s)':''),100);
+  setTimeout(hideOverlay,1800);
+  toast(ok+' téléchargée(s)'+(fail?' · '+fail+' échec(s)':''),fail?'warn':'ok');
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SESSIONS
+════════════════════════════════════════════════════════════════ */
+async function loadSessionsList(){
+  var sessions=await idbGetAll('sessions');
+  sessions.sort(function(a,b){return b.createdAt-a.createdAt});
+  var el=$('sessionsList');
+  $('sessCnt').textContent=sessions.length;
+  if(!sessions.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--mut);padding:6px 0">Aucune session enregistrée.</div>';
+    return;
+  }
+  el.innerHTML=sessions.map(function(s){
+    var d=new Date(s.createdAt).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    return '<div class="sess-item" data-id="'+esc(s.id)+'">'+
+      '<div class="si-body">'+
+        '<div class="si-q">'+(s.query?'"'+esc(s.query)+'"':'—')+' · '+esc(s.styleName||'')+'</div>'+
+        '<div class="si-meta">'+s.news.length+' news · '+d+'</div>'+
+      '</div>'+
+      '<div class="si-actions">'+
+        '<button data-act="open" data-id="'+esc(s.id)+'">Ouvrir</button>'+
+        '<button data-act="del" data-id="'+esc(s.id)+'">🗑</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  el.querySelectorAll('button[data-act]').forEach(function(b){
+    b.onclick=async function(ev){
+      ev.stopPropagation();
+      var id=b.dataset.id;
+      if(b.dataset.act==='open'){
+        showOverlay('Chargement…','Restauration de la session','…');
+        await openSession(id);
+        hideOverlay();
+      }else if(b.dataset.act==='del'){
+        if(!window.confirm('Supprimer cette session et toutes ses images ?'))return;
+        showOverlay('Suppression…','Nettoyage en cours','…');
+        await deleteSession(id);
+        await loadSessionsList();
+        hideOverlay();
+        toast('Session supprimée','warn');
+      }
+    };
+  });
+}
+async function openSession(id){
+  var sess=await idbGet('sessions',id);
+  if(!sess){toast('Session introuvable','err');return}
+  var all=await idbGetAll('images');
+  var imgs=all.filter(function(r){return r.meta&&r.meta.sessionId===id});
+  st.news=sess.news.slice();
+  st.selected=new Set();
+  st.currentStyleId=sess.styleId||st.styles[0].id;
+  st.newsImages={};
+  st.newsAnalyses={};
+  st.allItems=[];
+  itemSeq=0;
+  var grouped={};
+  imgs.forEach(function(r){
+    if(!grouped[r.meta.newsIdx])grouped[r.meta.newsIdx]=[];
+    grouped[r.meta.newsIdx].push(r);
+  });
+  Object.keys(grouped).forEach(function(ni){
+    grouped[ni].sort(function(a,b){return a.meta.variantIdx-b.meta.variantIdx});
+  });
+  Object.keys(grouped).forEach(function(ni){
+    var list=grouped[ni];
+    var scenes=list.map(function(r){return{title:r.meta.sceneTitle||'Scène',caption:r.meta.sceneCaption||'',prompt:r.meta.prompt||''}});
+    st.newsAnalyses[parseInt(ni,10)]={analysis:'(session restaurée)',scenes:scenes};
+  });
+  st.allItems=imgs.map(function(r){
+    var displayUrl=null;
+    if(r.blob)displayUrl=URL.createObjectURL(r.blob);
+    else if(r.dataUrl)displayUrl=r.dataUrl;
+    else if(r.url)displayUrl=r.url;
+    var item={
+      id:r.id,
+      sessionId:r.meta.sessionId,
+      newsIdx:r.meta.newsIdx,
+      variantIdx:r.meta.variantIdx,
+      newsTitle:r.meta.newsTitle,
+      sceneTitle:r.meta.sceneTitle,
+      sceneCaption:r.meta.sceneCaption,
+      prompt:r.meta.prompt,
+      styleId:r.meta.styleId,
+      refImages:null,
+      state:displayUrl?'done':'error',
+      err:displayUrl?null:'Image perdue',
+      url:r.url,displayUrl:displayUrl,blob:r.blob||null,
+      time:null
+    };
+    if(!st.newsImages[item.newsIdx])st.newsImages[item.newsIdx]=[];
+    st.newsImages[item.newsIdx].push(item);
+    return item;
+  });
+  st.allItems.forEach(function(i){
+    var m=i.id.match(/^it(\d+)$/);
+    if(m){var n=parseInt(m[1],10);if(n>itemSeq)itemSeq=n}
+  });
+  $('emptyState').style.display='none';
+  $('gallerySec').style.display='block';
+  $('bar').classList.add('on');
+  renderStyles();
+  renderNews();
+  renderGallery();
+  updateBar();
+  toast('Session restaurée : '+st.allItems.length+' image(s)','ok');
+  setTimeout(function(){
+    var el=document.querySelector('#newsBlocks .news-block');
+    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+  },200);
+}
+async function deleteSession(id){
+  var all=await idbGetAll('images');
+  var toDel=all.filter(function(r){return r.meta&&r.meta.sessionId===id});
+  for(var i=0;i<toDel.length;i++)await idbDel('images',toDel[i].id);
+  await idbDel('sessions',id);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   LIGHTBOX
+════════════════════════════════════════════════════════════════ */
+function openLb(item){
+  $('lbTi').textContent='📰 '+(item.newsTitle||'').slice(0,70)+' · '+(item.sceneTitle||'');
+  $('lbImg').src=item.displayUrl||item.url;
+  $('lbPrompt').textContent=(item.sceneTitle?('【'+item.sceneTitle+'】 '):'')+(item.sceneCaption||'')+'\n\n--- Prompt technique ---\n'+(item.prompt||'—');
+  $('lbActs').innerHTML=
+    '<button class="ibtn gold" id="lbDl">📥 Télécharger</button>'+
+    '<button class="ibtn" id="lbCopy">📋 Copier le prompt</button>';
+  $('lbDl').onclick=function(){dlItem(item)};
+  $('lbCopy').onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(item.prompt||'').then(function(){toast('Prompt copié')})};
+  $('lb').classList.add('on');
+}
+
+/* ════════════════════════════════════════════════════════════════
+   AJOUT STYLE
+════════════════════════════════════════════════════════════════ */
+function openStyleModal(){
+  $('nsName').value='';
+  $('nsIcon').value='🎨';
+  $('nsDesc').value='';
+  $('nsPrompt').value='';
+  $('styleM').classList.add('on');
+}
+function saveNewStyle(){
+  var name=$('nsName').value.trim();
+  var icon=$('nsIcon').value.trim()||'🎨';
+  var desc=$('nsDesc').value.trim();
+  var prompt=$('nsPrompt').value.trim();
+  if(!name)return toast('Donne un nom','err');
+  if(!prompt)return toast('Le prompt technique est requis','err');
+  if(!desc)desc=name;
+  var id='custom_'+uid();
+  var s={id:id,group:'Custom',name:name,icon:icon,desc:desc,prompt:prompt};
+  st.styles.push(s);
+  saveCustomStyles();
+  st.currentStyleId=id;
+  renderStyles();
+  $('styleM').classList.remove('on');
+  toast('Style ajouté : '+name,'ok');
+}
+
+/* ════════════════════════════════════════════════════════════════
+   BARRE PROGRESSION
+════════════════════════════════════════════════════════════════ */
+function updateBar(){
+  $('bar').classList.toggle('on',st.allItems.length>0||st.running);
+  var total=st.allItems.length;
+  var done=st.allItems.filter(function(i){return i.state==='done'}).length;
+  $('bCount').textContent=done;
+  var pending=allPending();
+  if(pending>0){
+    var pct=total?Math.round(100*done/Math.max(1,total)):0;
+    $('bProg').style.width=pct+'%';
+    $('bStat').textContent='Génération… '+done+'/'+total+' ('+pending+' en cours)';
+  }else{
+    $('bProg').style.width='0%';
+    $('bStat').textContent=st.running?'En cours…':'Prêt';
+  }
+  var chip=$('chip');
+  if(st.running&&!st.paused){chip.className='statchip run';$('chipTx').textContent='En cours'}
+  else if(st.paused){chip.className='statchip';$('chipTx').textContent='Pause'}
+  else{chip.className='statchip';$('chipTx').textContent='Prêt'}
+}
+
+function showInlineConfirm(){
+  var sel=Array.from(st.selected);
+  if(!sel.length)return;
+  var style=st.styles.find(function(s){return s.id===st.currentStyleId});
+  var n=sel.length;
+  var total=n*st.imgPerNews;
+  var estMin=Math.max(1,Math.round(total/(Math.max(2,st.keysAgnes.filter(function(k){return k.active}).length*2)*0.6)));
+  var pvInfo=st.politicalVision?('<br><br>🏛️ <b>Vision politique</b> : '+esc(st.politicalVision.slice(0,120))+(st.politicalVision.length>120?'…':'')):'';
+  $('icSummary').innerHTML='Vous allez analyser <b>'+n+' actualité(s)</b> avec l\'IA, puis générer <b>'+total+' image(s)</b> en style <b>'+esc(style?style.name:'—')+'</b>. Chaque image aura une légende politique qui forme une narration progressive.'+pvInfo;
+  $('icMeta').innerHTML=
+    '<span>🎨 '+esc(style?style.name:'—')+'</span>'+
+    '<span>🖼️ '+total+' images</span>'+
+    '<span>🔑 '+st.keysAgnes.filter(function(k){return k.active}).length+' clé(s)</span>'+
+    '<span>⏱️ ≈ '+estMin+' min</span>';
+  $('inlineConfirm').classList.add('on');
+  setTimeout(function(){
+    $('inlineConfirm').scrollIntoView({behavior:'smooth',block:'center'});
+  },100);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   ÉDITION D'IMAGE
+════════════════════════════════════════════════════════════════ */
+var editingItem=null,editMode='text',editInsertImg=null,editFuseImg=null;
+async function openEdit(item){
+  editingItem=item;editInsertImg=null;editFuseImg=null;editMode='text';
+  setEditMode('text');
+  $('editText').value='';$('editModify').value='';
+  $('insertHint').value='';$('fuseText').value='';$('fuseHint').value='';
+  resetDrop('insertDrop','insertFile','🖼️','Charger une image à intégrer','Sera intégrée harmonieusement.');
+  resetDrop('fuseDrop','fuseFile','🔀','Charger une image à fusionner','Visage / élément fusionné.');
+  $('editImg').src=item.displayUrl||item.url;
+  $('editM').classList.add('on');
+}
+function resetDrop(dropId,fileId,ic,ti,de){
+  var d=$(dropId);d.classList.remove('has');
+  d.innerHTML='<input type="file" accept="image/*" id="'+fileId+'">'+
+    '<div class="ic">'+ic+'</div><div class="ti">'+ti+'</div><div class="de">'+de+'</div>';
+  $(fileId).addEventListener('change',function(e){
+    var f=e.target.files&&e.target.files[0];
+    if(!f)return;handleEditDrop(dropId,fileId,f);e.target.value='';
+  });
+}
+async function handleEditDrop(dropId,fileId,f){
+  if(f.type.indexOf('image/')!==0)return toast('Fichier non image','err');
+  var raw=await fileToDataURL(f);
+  var compressed=await compressDataUrl(raw,1024);
+  if(dropId==='insertDrop')editInsertImg=compressed;else editFuseImg=compressed;
+  var d=$(dropId);d.classList.add('has');
+  d.innerHTML='<div class="prev"><img src="'+compressed+'"><button class="rm" id="rm-'+dropId+'">✕</button></div>';
+  $('rm-'+dropId).onclick=function(ev){
+    ev.stopPropagation();
+    if(dropId==='insertDrop')editInsertImg=null;else editFuseImg=null;
+    resetDrop(dropId,fileId,dropId==='insertDrop'?'🖼️':'🔀',
+      dropId==='insertDrop'?'Charger une image à intégrer':'Charger une image à fusionner',
+      dropId==='insertDrop'?'Sera intégrée.':'Visage / élément fusionné.');
+  };
+}
+function setEditMode(m){
+  editMode=m;
+  document.querySelectorAll('#editModeSeg button').forEach(function(b){b.classList.toggle('on',b.dataset.v===m)});
+  $('modeText').style.display=m==='text'?'':'none';
+  $('modeModify').style.display=m==='modify'?'':'none';
+  $('modeInsert').style.display=m==='insert'?'':'none';
+  $('modeFuse').style.display=m==='fuse'?'':'none';
+}
+async function getItemDataUrl(item){
+  if(item.blob)return await blobToDataURL(item.blob);
+  if(item.displayUrl&&item.displayUrl.slice(0,5)==='data:')return item.displayUrl;
+  var rec=await idbGet('images',item.id);
+  if(rec){
+    if(rec.blob)return await blobToDataURL(rec.blob);
+    if(rec.dataUrl)return rec.dataUrl;
+  }
+  if(item.url){
+    var b=await fetchBlobWithProxies(item.url);
+    return await blobToDataURL(b);
+  }
+  throw new Error('Impossible de récupérer l\'image source');
+}
+async function applyEdit(){
+  if(!editingItem)return;
+  var item=editingItem;
+  var refImgs=null;var promptParts=[];
+  showOverlay('Préparation de l\'édition…','Récupération de l\'image source','Étape 1/3');
+  try{
+    var srcData=await getItemDataUrl(item);
+    if(!srcData)throw new Error('Image source introuvable');
+    updateOverlay('Image source prête',40);
+
+    if(editMode==='text'){
+      var tx=$('editText').value.trim();
+      if(!tx){hideOverlay();return toast('Écris un texte','err')}
+      promptParts.push('Take the provided image and add this text as elegant cinematic typography: "'+tx+'"');
+      promptParts.push('The text must be perfectly readable, bold clean font, symmetrically placed, coherent with the visual style.');
+      promptParts.push('Absolutely NO other text, no watermark, no logo. Just this one text.');
+      refImgs=[srcData];
+    }else if(editMode==='modify'){
+      var mod=$('editModify').value.trim();
+      if(!mod){hideOverlay();return toast('Décris la modification','err')}
+      promptParts.push('Take the provided image and apply this modification: '+mod);
+      promptParts.push('Keep everything else identical: the character, the composition, the visual style, the palette, the grain.');
+      refImgs=[srcData];
+    }else if(editMode==='insert'){
+      if(!editInsertImg){hideOverlay();return toast('Charge une image à insérer','err')}
+      var hint=$('insertHint').value.trim()||'integrate it naturally into the scene';
+      promptParts.push('Take the FIRST provided image (the scene) and insert the SECOND image into it.');
+      promptParts.push('Instruction: '+hint+'.');
+      promptParts.push('The inserted image must blend naturally into the scene, respecting perspective, lighting, and the visual style.');
+      refImgs=[srcData,editInsertImg];
+    }else if(editMode==='fuse'){
+      if(!editFuseImg){hideOverlay();return toast('Charge une image à fusionner','err')}
+      var ftx=$('fuseText').value.trim();
+      var fhint=$('fuseHint').value.trim()||'fuse them harmoniously';
+      promptParts.push('Take the FIRST provided image (the scene) and fuse it with the SECOND provided image.');
+      promptParts.push('Instruction: '+fhint+'.');
+      promptParts.push('If the second image contains a face, use it as the main character of the scene, replacing the current subject while keeping the exact pose.');
+      promptParts.push('Everything must stay in the same visual style.');
+      if(ftx)promptParts.push('Additionally, add this text as elegant typography: "'+ftx+'". Only this one text, no other text, no watermark.');
+      refImgs=[srcData,editFuseImg];
+    }
+    var style=st.styles.find(function(s){return s.id===item.styleId});
+    var styleHint=style?(' '+style.prompt):'';
+    var finalPrompt=promptParts.join(' ')+styleHint;
+
+    $('editM').classList.remove('on');
+    updateOverlay('Envoi à l\'IA…',60);
+
+    var newItem={
+      id:'it'+(++itemSeq),
+      sessionId:item.sessionId,
+      newsIdx:item.newsIdx,
+      variantIdx:item.variantIdx,
+      newsTitle:item.newsTitle,
+      sceneTitle:item.sceneTitle+' (édit)',
+      sceneCaption:item.sceneCaption,
+      prompt:finalPrompt,
+      styleId:item.styleId,
+      refImages:refImgs,
+      state:'loading',
+      url:null,displayUrl:null,blob:null,
+      err:null,time:null,
+      edits:(item.edits||[]).concat([{mode:editMode,at:Date.now()}])
+    };
+    st.allItems.push(newItem);
+    st.newsImages[item.newsIdx]=st.newsImages[item.newsIdx]||[];
+    st.newsImages[item.newsIdx].push(newItem);
+    insertItemCard(newItem);
+    queue.push(function(){return runItem(newItem)});
+    ensureWorkers();
+    updateBar();
+    updateOverlay('Génération en cours…',80);
+    setTimeout(hideOverlay,600);
+    toast('Édition lancée');
+    setTimeout(function(){
+      var el=$('iw-'+newItem.id);
+      if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
+    },200);
+  }catch(e){
+    hideOverlay();
+    log('Édition : '+(e.message||e),'e');
+    toast('Échec : '+(e.message||e),'err');
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   INIT
+════════════════════════════════════════════════════════════════ */
+(function init(){
+  loadEndpoints();
+  loadStyles();
+  loadPolitics();
+  initTTS();
+
+  var savedKeys=loadLS(LS.keys,[]);
+  if(savedKeys.length){
+    $('keysAgnes').value=savedKeys.join('\n');
+    st.keysAgnes=savedKeys.map(function(k){return{key:k,lastReq:0,cool:0,active:true,errors:0,count:0}});
+  }
+  $('keysAgnes').addEventListener('input',autoSaveKeys);
+  $('keysAgnes').addEventListener('change',autoSaveKeys);
+  renderKeys();
+  setInterval(renderKeys,2500);
+
+  $('searchBtn').addEventListener('click',doSearch);
+  $('searchQ').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();doSearch()}});
+
+  $('validateBtn').addEventListener('click',showInlineConfirm);
+  $('clearSelBtn').addEventListener('click',function(){
+    st.selected.clear();renderNews();updateValBar();
+    $('inlineConfirm').classList.remove('on');
+  });
+
+  $('icCancel').addEventListener('click',function(){$('inlineConfirm').classList.remove('on')});
+  $('icGo').addEventListener('click',launchGeneration);
+
+  $('stopBtn').addEventListener('click',function(){
+    st.stop=true;st.running=false;
+    log('Arrêt demandé','w');toast('Arrêt demandé','warn');
+    queue.length=0;updateBar();hideOverlay();
+  });
+
+  $('dlAllBtn').addEventListener('click',dlAll);
+  $('playAllBtn').addEventListener('click',function(){
+    var q=buildQueueForAll();
+    if(!q.length)return toast('Aucune image prête','warn');
+    startSlideshow(q);
+  });
+
+  $('addStyleBtn').addEventListener('click',openStyleModal);
+  $('styleX').addEventListener('click',function(){$('styleM').classList.remove('on')});
+  $('nsCancel').addEventListener('click',function(){$('styleM').classList.remove('on')});
+  $('nsSave').addEventListener('click',saveNewStyle);
+
+  document.querySelectorAll('#pvPresets button').forEach(function(b){
+    b.addEventListener('click',function(){
+      var wasOn=b.classList.contains('on');
+      document.querySelectorAll('#pvPresets button').forEach(function(x){x.classList.remove('on')});
+      if(wasOn){
+        $('pvText').value='';
+        savePolitics('');
+      }else{
+        b.classList.add('on');
+        var preset=b.dataset.p;
+        var current=$('pvText').value.trim();
+        $('pvText').value=preset+'. '+(current&&current!==preset?current:'');
+        savePolitics(preset);
+        toast('Vision : '+preset.slice(0,30),'ok');
+      }
+    });
+  });
+  $('pvText').addEventListener('input',function(){savePolitics()});
+  $('pvText').addEventListener('blur',function(){savePolitics()});
+
+  // Édition Event Listeners
+  $('editX').addEventListener('click',function(){$('editM').classList.remove('on')});
+  $('editCancel').addEventListener('click',function(){$('editM').classList.remove('on')});
+  $('editApply').addEventListener('click',applyEdit);
+  document.querySelectorAll('#editModeSeg button').forEach(function(b){
+    b.addEventListener('click',function(){setEditMode(b.dataset.v)});
+  });
+  resetDrop('insertDrop','insertFile','🖼️','Charger une image à intégrer','Sera intégrée harmonieusement.');
+  resetDrop('fuseDrop','fuseFile','🔀','Charger une image à fusionner','Visage / élément fusionné.');
+
+  $('lbX').addEventListener('click',function(){$('lb').classList.remove('on')});
+  $('lbImg').addEventListener('click',function(){$('lb').classList.remove('on')});
+
+  $('jumpBtn').addEventListener('click',function(){
+    var el=document.querySelector('#newsBlocks .news-block .icard');
+    if(el){
+      var y=el.getBoundingClientRect().top+window.scrollY-100;
+      window.scrollTo({top:y,behavior:'smooth'});
+    }
+    $('jumpBtn').classList.remove('on');
+  });
+
+  // Slideshow controls
+  $('ssClose').addEventListener('click',closeSlideshow);
+  $('ssPlay').addEventListener('click',togglePause);
+  $('ssNext').addEventListener('click',nextSlide);
+  $('ssPrev').addEventListener('click',prevSlide);
+  $('ssFs').addEventListener('click',toggleFullscreen);
+  $('ssSpeed').addEventListener('change',function(e){
+    var v=parseFloat(e.target.value)||1;
+    tts.speed=v;
+    saveLS(LS.speed,v);
+    toast('Vitesse : '+v+'×','ok');
+  });
+
+  // TTS method selector
+  $('ssTtsMethod').addEventListener('change',function(e){
+    tts.method=e.target.value;
+    saveLS(LS.ttsMethod,tts.method);
+    updateTtsStatus();
+    toast('Méthode TTS : '+tts.method,'ok');
+  });
+  $('ssTtsTest').addEventListener('click',testTtsMethod);
+
+  // Keyboard
+  document.addEventListener('keydown',function(e){
+    if(!$('slideshow').classList.contains('on'))return;
+    if(e.key==='Escape')closeSlideshow();
+    else if(e.key===' '){e.preventDefault();togglePause()}
+    else if(e.key==='ArrowRight')nextSlide();
+    else if(e.key==='ArrowLeft')prevSlide();
+  });
+
+  loadSessionsList().catch(function(e){log('Sessions : '+(e.message||e),'w')});
+
+  log('NewsReel prêt — '+st.styles.length+' styles disponibles','s');
+  log('Vision politique : '+(st.politicalVision?'définie':'neutre'),'s');
+  log('TTS : Puter='+(tts.puterAvailable?'OK':'indispo')+' · Native='+(tts.voice?tts.voice.name:'aucune')+' · Google=dispo','s');
+})();
+
+async function doSearch(){
+  var q=$('searchQ').value.trim();
+  if(!q)return toast('Écris un sujet','err');
+  var btn=$('searchBtn');
+  busy(btn,true);
+  btn.textContent='Recherche…';
+  st.news=[];st.selected.clear();renderNews();updateValBar();
+  $('inlineConfirm').classList.remove('on');
+  $('newsList').innerHTML='<div class="news-empty"><span class="ic">🔍</span>Recherche en cours…</div>';
+  showOverlay('Recherche d\'actualités…','Interrogation des endpoints','Étape 1');
+  try{
+    var result=await searchNews(q);
+    st.news=result.items;renderNews();
+    toast(result.items.length+' actualité(s) via '+result.endpoint,'ok');
+    log('✅ '+result.items.length+' actualités via '+result.endpoint,'s');
+    updateOverlay('Terminé',result.items.length+' actualité(s) trouvée(s)',100);
+    setTimeout(hideOverlay,900);
+  }catch(e){
+    log('Erreur : '+(e.message||e),'e');
+    toast('Erreur : '+(e.message||e),'err');
+    $('newsList').innerHTML='<div class="news-empty"><span class="ic">⚠️</span>'+esc(e.message||'Erreur inconnue')+'<br><br>Vérifie le journal technique.</div>';
+    updateOverlay('Erreur',e.message||'Erreur inconnue',100);
+    setTimeout(hideOverlay,2200);
+  }finally{
+    busy(btn,false);
+    btn.textContent='🔍 Chercher';
+  }
+  setStage(null);
+}
+</script>
+</body>
+</html>
