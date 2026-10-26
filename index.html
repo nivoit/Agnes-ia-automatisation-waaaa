@@ -185,6 +185,24 @@ textarea{font-size:13px;min-height:64px;resize:vertical;line-height:1.55}
 .mh h3{font-size:16px;font-weight:800;flex:1}
 .mh .x{width:36px;height:36px;border-radius:50%;background:var(--bg3);border:1px solid var(--line);font-size:14px;color:var(--fg2);flex-shrink:0}
 .mb{padding:16px;display:flex;flex-direction:column;gap:14px}
+.mb .seg{display:flex;gap:6px;flex-wrap:wrap}
+.mb .seg button{padding:8px 13px;border-radius:100px;border:1px solid var(--line2);background:var(--bg3);color:var(--fg2);font-size:12.5px;font-weight:600}
+.mb .seg button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+.edimg{background:#000;border-radius:var(--rs);overflow:hidden;max-height:60vh;display:flex;align-items:center;justify-content:center;border:1px solid var(--line)}
+.edimg img{max-height:60vh;width:auto;max-width:100%;object-fit:contain}
+
+.drop{position:relative;border:2px dashed var(--line2);border-radius:var(--rs);padding:22px 16px;text-align:center;cursor:pointer;transition:.15s}
+.drop:hover{border-color:var(--gold)}
+.drop input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.drop.has{padding:0;border-style:solid;border-color:var(--gold)}
+.drop.has input{display:none}
+.drop .prev{position:relative}
+.drop .prev img{width:100%;max-height:220px;object-fit:contain;background:#000;border-radius:var(--rs)}
+.drop .rm{position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,.75);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;z-index:2;border:1px solid rgba(255,255,255,.2)}
+.drop .ic{font-size:26px;margin-bottom:6px}
+.drop .ti{font-weight:700;font-size:13px}
+.drop .de{font-size:11.5px;color:var(--mut);margin-top:3px;line-height:1.4}
 
 #toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-120px);background:var(--fg);color:#0a0a0c;padding:11px 18px;border-radius:100px;font-size:13px;font-weight:700;z-index:999;opacity:0;transition:.28s cubic-bezier(.2,.9,.3,1.1);max-width:88vw;pointer-events:none;text-align:center}
 #toast.on{opacity:1;transform:translateX(-50%)}
@@ -474,6 +492,66 @@ L'IA analyse chaque actualité, la découpe en 8 scènes avec narration politiqu
 </div>
 </div>
 
+<!-- ══════════ MODAL ÉDITION ══════════ -->
+<div class="modal" id="editM">
+<div class="mh"><h3>✏️ Éditer l'image</h3><button class="x" id="editX">✕</button></div>
+<div class="mb">
+<div class="edimg"><img id="editImg" alt=""></div>
+<div class="f">
+<label>Mode d'édition</label>
+<div class="seg" id="editModeSeg">
+<button data-v="text" class="on">📝 Texte</button>
+<button data-v="modify">🎨 Modifier (IA)</button>
+<button data-v="insert">🖼️ Insérer une image</button>
+<button data-v="fuse">🔀 Fusion texte + image</button>
+</div>
+</div>
+<div id="modeText" class="f">
+<label>Texte à ajouter</label>
+<textarea id="editText" placeholder="Ex: CLIMAT — Urgence mondiale" rows="2"></textarea>
+<div class="hint">Intégré par l'IA en typographie cohérente avec le style.</div>
+</div>
+<div id="modeModify" class="f" style="display:none">
+<label>Décris la modification</label>
+<textarea id="editModify" placeholder="Ex: remplace le ciel par un ciel d'orage…" rows="3"></textarea>
+</div>
+<div id="modeInsert" class="f" style="display:none">
+<label>Image à insérer dans le décor</label>
+<div class="drop" id="insertDrop">
+<input type="file" accept="image/*" id="insertFile">
+<div class="ic">🖼️</div>
+<div class="ti">Charger une image à intégrer</div>
+<div class="de">Cadre doré, affiche murale, reflet…</div>
+</div>
+<div class="f" style="margin-top:12px">
+<label>Instruction (optionnel)</label>
+<input type="text" id="insertHint" placeholder="Ex: dans un cadre doré sur le mur de gauche">
+</div>
+</div>
+<div id="modeFuse" class="f" style="display:none">
+<label>Image à fusionner</label>
+<div class="drop" id="fuseDrop">
+<input type="file" accept="image/*" id="fuseFile">
+<div class="ic">🔀</div>
+<div class="ti">Charger une image à fusionner</div>
+<div class="de">Visage / élément fusionné avec la scène.</div>
+</div>
+<div class="f" style="margin-top:12px">
+<label>Texte à ajouter (optionnel)</label>
+<input type="text" id="fuseText" placeholder="Ex: LE MONDE CHANGE">
+</div>
+<div class="f">
+<label>Instruction de fusion (optionnel)</label>
+<input type="text" id="fuseHint" placeholder="Ex: intégrer le visage comme personnage principal">
+</div>
+</div>
+<div class="brow" style="margin-top:8px">
+<button class="btn" id="editCancel">Annuler</button>
+<button class="btn gold" id="editApply">✨ Appliquer</button>
+</div>
+</div>
+</div>
+
 <div class="modal" id="styleM">
 <div class="mh"><h3>➕ Nouveau style visuel</h3><button class="x" id="styleX">✕</button></div>
 <div class="mb">
@@ -714,13 +792,12 @@ var tts={
   currentAudio:null,
   cycleTimer:null,
   playing:false,
-  method:'auto', // 'auto' | 'puter' | 'native' | 'google' | 'silent'
+  method:'auto',
   puterAvailable:false,
   methodStatus:'—'
 };
 
 function initTTS(){
-  // Web Speech API
   if(window.speechSynthesis){
     tts.available=true;
     var loadVoices=function(){
@@ -747,7 +824,6 @@ function initTTS(){
     tts.available=false;
     tts.useGoogle=true;
   }
-  // Puter.js dispo ?
   if(window.puter&&window.puter.ai&&typeof window.puter.ai.txt2speech==='function'){
     tts.puterAvailable=true;
     log('Puter.js TTS disponible','s');
@@ -755,13 +831,11 @@ function initTTS(){
     tts.puterAvailable=false;
     log('Puter.js non chargé','w');
   }
-  // Charge méthode sauvegardée
   var saved=loadLS(LS.ttsMethod,'auto');
   tts.method=saved||'auto';
   var sel=$('ssTtsMethod');
   if(sel){Array.from(sel.options).forEach(function(o){if(o.value===tts.method)o.selected=true})}
   updateTtsStatus();
-  // Charge vitesse
   var savedSpeed=loadLS(LS.speed,1.0);
   tts.speed=parseFloat(savedSpeed)||1.0;
   var ssel=$('ssSpeed');
@@ -891,27 +965,21 @@ async function speakText(text){
 
   var method=tts.method;
 
-  // Mode auto : essaie dans l'ordre
   if(method==='auto'){
-    // 1. Puter
     if(tts.puterAvailable){
       try{await speakWithPuter(text);return}
       catch(e){log('Puter échec : '+(e.message||e),'w')}
     }
-    // 2. Native
     if(tts.voice){
       try{await speakWithNative(text);return}
       catch(e){log('Native échec : '+(e.message||e),'w')}
     }
-    // 3. Google
     try{await speakWithGoogle(text);return}
     catch(e){log('Google échec : '+(e.message||e),'w')}
-    // 4. Silent
     await speakSilent(text);
     return;
   }
 
-  // Mode forcé
   if(method==='puter'){
     try{await speakWithPuter(text);return}
     catch(e){log('Puter forcé échec : '+(e.message||e),'w');toast('Puter a échoué — silencieux','warn')}
@@ -1509,6 +1577,53 @@ function dataURLToBlob(dataUrl){
     return new Blob([arr],{type:mime});
   }catch(e){return null}
 }
+function blobToDataURL(blob){
+  return new Promise(function(res){
+    var fr=new FileReader();
+    fr.onload=function(){res(fr.result)};
+    fr.onerror=function(){res(null)};
+    fr.readAsDataURL(blob);
+  });
+}
+function fileToDataURL(f){
+  return new Promise(function(res,rej){
+    var fr=new FileReader();
+    fr.onload=function(e){res(e.target.result)};
+    fr.onerror=rej;
+    fr.readAsDataURL(f);
+  });
+}
+function compressDataUrl(uri,max){
+  return new Promise(function(res){
+    var im=new Image();
+    im.onload=function(){
+      var s=Math.min(1,max/Math.max(im.width,im.height));
+      var c=document.createElement('canvas');
+      c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+      c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      res(c.toDataURL('image/jpeg',0.9));
+    };
+    im.onerror=function(){res(uri)};
+    im.src=uri;
+  });
+}
+async function fetchBlobWithProxies(url){
+  try{
+    var r=await fetch(url,{mode:'cors'});
+    if(r.ok)return await r.blob();
+  }catch(e){}
+  for(var i=0;i<CORS_PROXIES.length;i++){
+    try{
+      var proxied=CORS_PROXIES[i](url);
+      var r2=await fetch(proxied);
+      if(r2.ok){
+        var b=await r2.blob();
+        if(b&&b.size>1000)return b;
+      }
+    }catch(e2){}
+  }
+  throw new Error('Impossible de récupérer l\'image (CORS)');
+}
 
 /* ════════════════════════════════════════════════════════════════
    WORKERS
@@ -1720,12 +1835,14 @@ function updateItemCard(item){
   wrap.querySelector('img').onclick=function(){openLb(item)};
   acts.innerHTML=
     '<button class="ibtn gold" data-act="dl">📥</button>'+
+    '<button class="ibtn" data-act="edit">✏️</button>'+
     '<button class="ibtn" data-act="zoom">🔍</button>'+
     '<button class="ibtn" data-act="regen">↻</button>';
   acts.querySelectorAll('.ibtn').forEach(function(b){
     b.onclick=function(){
       var a=b.dataset.act;
       if(a==='dl')dlItem(item);
+      else if(a==='edit')openEdit(item);
       else if(a==='zoom')openLb(item);
       else if(a==='regen'){
         item.state='loading';updateItemCard(item);
@@ -1989,389 +2106,4 @@ async function dlItem(item){
   try{
     var blob=await ensureBlob(item);
     var fname=extractFilename(item.url||'')||('newsreel_'+safe(item.sceneTitle)+'_v'+(item.variantIdx+1)+'_'+stamp()+'.jpg');
-    blobDownload(blob,fname);
-    toast('Téléchargé : '+fname.slice(0,36));
-  }catch(e){
-    log('DL échec : '+(e.message||e),'e');
-    toast('Téléchargement impossible','err');
-  }
-}
-async function dlAll(){
-  var done=st.allItems.filter(function(i){return i.state==='done'});
-  if(!done.length)return toast('Aucune image à télécharger','warn');
-  showOverlay('Téléchargement en cours…','0 / '+done.length,'Préparation');
-  var ok=0,fail=0;
-  for(var i=0;i<done.length;i++){
-    var item=done[i];
-    updateOverlay((i+1)+' / '+done.length+' · '+(item.sceneTitle||'').slice(0,40),Math.round(100*i/done.length));
-    try{
-      var blob=await ensureBlob(item);
-      var fname=extractFilename(item.url||'')||('newsreel_'+safe(item.sceneTitle)+'_v'+(item.variantIdx+1)+'_'+stamp()+'.jpg');
-      blobDownload(blob,fname);
-      ok++;
-      await sleep(320);
-    }catch(e){
-      fail++;
-      log('DL échoué '+item.id+' : '+(e.message||e),'w');
-    }
-  }
-  updateOverlay('Terminé',ok+' téléchargée(s)'+(fail?' · '+fail+' échec(s)':''),100);
-  setTimeout(hideOverlay,1800);
-  toast(ok+' téléchargée(s)'+(fail?' · '+fail+' échec(s)':''),fail?'warn':'ok');
-}
-
-/* ════════════════════════════════════════════════════════════════
-   SESSIONS
-════════════════════════════════════════════════════════════════ */
-async function loadSessionsList(){
-  var sessions=await idbGetAll('sessions');
-  sessions.sort(function(a,b){return b.createdAt-a.createdAt});
-  var el=$('sessionsList');
-  $('sessCnt').textContent=sessions.length;
-  if(!sessions.length){
-    el.innerHTML='<div style="font-size:12px;color:var(--mut);padding:6px 0">Aucune session enregistrée.</div>';
-    return;
-  }
-  el.innerHTML=sessions.map(function(s){
-    var d=new Date(s.createdAt).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-    return '<div class="sess-item" data-id="'+esc(s.id)+'">'+
-      '<div class="si-body">'+
-        '<div class="si-q">'+(s.query?'"'+esc(s.query)+'"':'—')+' · '+esc(s.styleName||'')+'</div>'+
-        '<div class="si-meta">'+s.news.length+' news · '+d+'</div>'+
-      '</div>'+
-      '<div class="si-actions">'+
-        '<button data-act="open" data-id="'+esc(s.id)+'">Ouvrir</button>'+
-        '<button data-act="del" data-id="'+esc(s.id)+'">🗑</button>'+
-      '</div>'+
-    '</div>';
-  }).join('');
-  el.querySelectorAll('button[data-act]').forEach(function(b){
-    b.onclick=async function(ev){
-      ev.stopPropagation();
-      var id=b.dataset.id;
-      if(b.dataset.act==='open'){
-        showOverlay('Chargement…','Restauration de la session','…');
-        await openSession(id);
-        hideOverlay();
-      }else if(b.dataset.act==='del'){
-        if(!window.confirm('Supprimer cette session et toutes ses images ?'))return;
-        showOverlay('Suppression…','Nettoyage en cours','…');
-        await deleteSession(id);
-        await loadSessionsList();
-        hideOverlay();
-        toast('Session supprimée','warn');
-      }
-    };
-  });
-}
-async function openSession(id){
-  var sess=await idbGet('sessions',id);
-  if(!sess){toast('Session introuvable','err');return}
-  var all=await idbGetAll('images');
-  var imgs=all.filter(function(r){return r.meta&&r.meta.sessionId===id});
-  st.news=sess.news.slice();
-  st.selected=new Set();
-  st.currentStyleId=sess.styleId||st.styles[0].id;
-  st.newsImages={};
-  st.newsAnalyses={};
-  st.allItems=[];
-  itemSeq=0;
-  var grouped={};
-  imgs.forEach(function(r){
-    if(!grouped[r.meta.newsIdx])grouped[r.meta.newsIdx]=[];
-    grouped[r.meta.newsIdx].push(r);
-  });
-  Object.keys(grouped).forEach(function(ni){
-    grouped[ni].sort(function(a,b){return a.meta.variantIdx-b.meta.variantIdx});
-  });
-  Object.keys(grouped).forEach(function(ni){
-    var list=grouped[ni];
-    var scenes=list.map(function(r){return{title:r.meta.sceneTitle||'Scène',caption:r.meta.sceneCaption||'',prompt:r.meta.prompt||''}});
-    st.newsAnalyses[parseInt(ni,10)]={analysis:'(session restaurée)',scenes:scenes};
-  });
-  st.allItems=imgs.map(function(r){
-    var displayUrl=null;
-    if(r.blob)displayUrl=URL.createObjectURL(r.blob);
-    else if(r.dataUrl)displayUrl=r.dataUrl;
-    else if(r.url)displayUrl=r.url;
-    var item={
-      id:r.id,
-      sessionId:r.meta.sessionId,
-      newsIdx:r.meta.newsIdx,
-      variantIdx:r.meta.variantIdx,
-      newsTitle:r.meta.newsTitle,
-      sceneTitle:r.meta.sceneTitle,
-      sceneCaption:r.meta.sceneCaption,
-      prompt:r.meta.prompt,
-      styleId:r.meta.styleId,
-      refImages:null,
-      state:displayUrl?'done':'error',
-      err:displayUrl?null:'Image perdue',
-      url:r.url,displayUrl:displayUrl,blob:r.blob||null,
-      time:null
-    };
-    if(!st.newsImages[item.newsIdx])st.newsImages[item.newsIdx]=[];
-    st.newsImages[item.newsIdx].push(item);
-    return item;
-  });
-  st.allItems.forEach(function(i){
-    var m=i.id.match(/^it(\d+)$/);
-    if(m){var n=parseInt(m[1],10);if(n>itemSeq)itemSeq=n}
-  });
-  $('emptyState').style.display='none';
-  $('gallerySec').style.display='block';
-  $('bar').classList.add('on');
-  renderStyles();
-  renderNews();
-  renderGallery();
-  updateBar();
-  toast('Session restaurée : '+st.allItems.length+' image(s)','ok');
-  setTimeout(function(){
-    var el=document.querySelector('#newsBlocks .news-block');
-    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
-  },200);
-}
-async function deleteSession(id){
-  var all=await idbGetAll('images');
-  var toDel=all.filter(function(r){return r.meta&&r.meta.sessionId===id});
-  for(var i=0;i<toDel.length;i++)await idbDel('images',toDel[i].id);
-  await idbDel('sessions',id);
-}
-
-/* ════════════════════════════════════════════════════════════════
-   LIGHTBOX
-════════════════════════════════════════════════════════════════ */
-function openLb(item){
-  $('lbTi').textContent='📰 '+(item.newsTitle||'').slice(0,70)+' · '+(item.sceneTitle||'');
-  $('lbImg').src=item.displayUrl||item.url;
-  $('lbPrompt').textContent=(item.sceneTitle?('【'+item.sceneTitle+'】 '):'')+(item.sceneCaption||'')+'\n\n--- Prompt technique ---\n'+(item.prompt||'—');
-  $('lbActs').innerHTML=
-    '<button class="ibtn gold" id="lbDl">📥 Télécharger</button>'+
-    '<button class="ibtn" id="lbCopy">📋 Copier le prompt</button>';
-  $('lbDl').onclick=function(){dlItem(item)};
-  $('lbCopy').onclick=function(){if(navigator.clipboard)navigator.clipboard.writeText(item.prompt||'').then(function(){toast('Prompt copié')})};
-  $('lb').classList.add('on');
-}
-
-/* ════════════════════════════════════════════════════════════════
-   AJOUT STYLE
-════════════════════════════════════════════════════════════════ */
-function openStyleModal(){
-  $('nsName').value='';
-  $('nsIcon').value='🎨';
-  $('nsDesc').value='';
-  $('nsPrompt').value='';
-  $('styleM').classList.add('on');
-}
-function saveNewStyle(){
-  var name=$('nsName').value.trim();
-  var icon=$('nsIcon').value.trim()||'🎨';
-  var desc=$('nsDesc').value.trim();
-  var prompt=$('nsPrompt').value.trim();
-  if(!name)return toast('Donne un nom','err');
-  if(!prompt)return toast('Le prompt technique est requis','err');
-  if(!desc)desc=name;
-  var id='custom_'+uid();
-  var s={id:id,group:'Custom',name:name,icon:icon,desc:desc,prompt:prompt};
-  st.styles.push(s);
-  saveCustomStyles();
-  st.currentStyleId=id;
-  renderStyles();
-  $('styleM').classList.remove('on');
-  toast('Style ajouté : '+name,'ok');
-}
-
-/* ════════════════════════════════════════════════════════════════
-   BARRE PROGRESSION
-════════════════════════════════════════════════════════════════ */
-function updateBar(){
-  $('bar').classList.toggle('on',st.allItems.length>0||st.running);
-  var total=st.allItems.length;
-  var done=st.allItems.filter(function(i){return i.state==='done'}).length;
-  $('bCount').textContent=done;
-  var pending=allPending();
-  if(pending>0){
-    var pct=total?Math.round(100*done/Math.max(1,total)):0;
-    $('bProg').style.width=pct+'%';
-    $('bStat').textContent='Génération… '+done+'/'+total+' ('+pending+' en cours)';
-  }else{
-    $('bProg').style.width='0%';
-    $('bStat').textContent=st.running?'En cours…':'Prêt';
-  }
-  var chip=$('chip');
-  if(st.running&&!st.paused){chip.className='statchip run';$('chipTx').textContent='En cours'}
-  else if(st.paused){chip.className='statchip';$('chipTx').textContent='Pause'}
-  else{chip.className='statchip';$('chipTx').textContent='Prêt'}
-}
-
-function showInlineConfirm(){
-  var sel=Array.from(st.selected);
-  if(!sel.length)return;
-  var style=st.styles.find(function(s){return s.id===st.currentStyleId});
-  var n=sel.length;
-  var total=n*st.imgPerNews;
-  var estMin=Math.max(1,Math.round(total/(Math.max(2,st.keysAgnes.filter(function(k){return k.active}).length*2)*0.6)));
-  var pvInfo=st.politicalVision?('<br><br>🏛️ <b>Vision politique</b> : '+esc(st.politicalVision.slice(0,120))+(st.politicalVision.length>120?'…':'')):'';
-  $('icSummary').innerHTML='Vous allez analyser <b>'+n+' actualité(s)</b> avec l\'IA, puis générer <b>'+total+' image(s)</b> en style <b>'+esc(style?style.name:'—')+'</b>. Chaque image aura une légende politique qui forme une narration progressive.'+pvInfo;
-  $('icMeta').innerHTML=
-    '<span>🎨 '+esc(style?style.name:'—')+'</span>'+
-    '<span>🖼️ '+total+' images</span>'+
-    '<span>🔑 '+st.keysAgnes.filter(function(k){return k.active}).length+' clé(s)</span>'+
-    '<span>⏱️ ≈ '+estMin+' min</span>';
-  $('inlineConfirm').classList.add('on');
-  setTimeout(function(){
-    $('inlineConfirm').scrollIntoView({behavior:'smooth',block:'center'});
-  },100);
-}
-
-/* ════════════════════════════════════════════════════════════════
-   INIT
-════════════════════════════════════════════════════════════════ */
-(function init(){
-  loadEndpoints();
-  loadStyles();
-  loadPolitics();
-  initTTS();
-
-  var savedKeys=loadLS(LS.keys,[]);
-  if(savedKeys.length){
-    $('keysAgnes').value=savedKeys.join('\n');
-    st.keysAgnes=savedKeys.map(function(k){return{key:k,lastReq:0,cool:0,active:true,errors:0,count:0}});
-  }
-  $('keysAgnes').addEventListener('input',autoSaveKeys);
-  $('keysAgnes').addEventListener('change',autoSaveKeys);
-  renderKeys();
-  setInterval(renderKeys,2500);
-
-  $('searchBtn').addEventListener('click',doSearch);
-  $('searchQ').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();doSearch()}});
-
-  $('validateBtn').addEventListener('click',showInlineConfirm);
-  $('clearSelBtn').addEventListener('click',function(){
-    st.selected.clear();renderNews();updateValBar();
-    $('inlineConfirm').classList.remove('on');
-  });
-
-  $('icCancel').addEventListener('click',function(){$('inlineConfirm').classList.remove('on')});
-  $('icGo').addEventListener('click',launchGeneration);
-
-  $('stopBtn').addEventListener('click',function(){
-    st.stop=true;st.running=false;
-    log('Arrêt demandé','w');toast('Arrêt demandé','warn');
-    queue.length=0;updateBar();hideOverlay();
-  });
-
-  $('dlAllBtn').addEventListener('click',dlAll);
-  $('playAllBtn').addEventListener('click',function(){
-    var q=buildQueueForAll();
-    if(!q.length)return toast('Aucune image prête','warn');
-    startSlideshow(q);
-  });
-
-  $('addStyleBtn').addEventListener('click',openStyleModal);
-  $('styleX').addEventListener('click',function(){$('styleM').classList.remove('on')});
-  $('nsCancel').addEventListener('click',function(){$('styleM').classList.remove('on')});
-  $('nsSave').addEventListener('click',saveNewStyle);
-
-  document.querySelectorAll('#pvPresets button').forEach(function(b){
-    b.addEventListener('click',function(){
-      var wasOn=b.classList.contains('on');
-      document.querySelectorAll('#pvPresets button').forEach(function(x){x.classList.remove('on')});
-      if(wasOn){
-        $('pvText').value='';
-        savePolitics('');
-      }else{
-        b.classList.add('on');
-        var preset=b.dataset.p;
-        var current=$('pvText').value.trim();
-        $('pvText').value=preset+'. '+(current&&current!==preset?current:'');
-        savePolitics(preset);
-        toast('Vision : '+preset.slice(0,30),'ok');
-      }
-    });
-  });
-  $('pvText').addEventListener('input',function(){savePolitics()});
-  $('pvText').addEventListener('blur',function(){savePolitics()});
-
-  $('lbX').addEventListener('click',function(){$('lb').classList.remove('on')});
-  $('lbImg').addEventListener('click',function(){$('lb').classList.remove('on')});
-
-  $('jumpBtn').addEventListener('click',function(){
-    var el=document.querySelector('#newsBlocks .news-block .icard');
-    if(el){
-      var y=el.getBoundingClientRect().top+window.scrollY-100;
-      window.scrollTo({top:y,behavior:'smooth'});
-    }
-    $('jumpBtn').classList.remove('on');
-  });
-
-  // Slideshow controls
-  $('ssClose').addEventListener('click',closeSlideshow);
-  $('ssPlay').addEventListener('click',togglePause);
-  $('ssNext').addEventListener('click',nextSlide);
-  $('ssPrev').addEventListener('click',prevSlide);
-  $('ssFs').addEventListener('click',toggleFullscreen);
-  $('ssSpeed').addEventListener('change',function(e){
-    var v=parseFloat(e.target.value)||1;
-    tts.speed=v;
-    saveLS(LS.speed,v);
-    toast('Vitesse : '+v+'×','ok');
-  });
-
-  // TTS method selector
-  $('ssTtsMethod').addEventListener('change',function(e){
-    tts.method=e.target.value;
-    saveLS(LS.ttsMethod,tts.method);
-    updateTtsStatus();
-    toast('Méthode TTS : '+tts.method,'ok');
-  });
-  $('ssTtsTest').addEventListener('click',testTtsMethod);
-
-  // Keyboard
-  document.addEventListener('keydown',function(e){
-    if(!$('slideshow').classList.contains('on'))return;
-    if(e.key==='Escape')closeSlideshow();
-    else if(e.key===' '){e.preventDefault();togglePause()}
-    else if(e.key==='ArrowRight')nextSlide();
-    else if(e.key==='ArrowLeft')prevSlide();
-  });
-
-  loadSessionsList().catch(function(e){log('Sessions : '+(e.message||e),'w')});
-
-  log('NewsReel prêt — '+st.styles.length+' styles disponibles','s');
-  log('Vision politique : '+(st.politicalVision?'définie':'neutre'),'s');
-  log('TTS : Puter='+(tts.puterAvailable?'OK':'indispo')+' · Native='+(tts.voice?tts.voice.name:'aucune')+' · Google=dispo','s');
-})();
-
-async function doSearch(){
-  var q=$('searchQ').value.trim();
-  if(!q)return toast('Écris un sujet','err');
-  var btn=$('searchBtn');
-  busy(btn,true);
-  btn.textContent='Recherche…';
-  st.news=[];st.selected.clear();renderNews();updateValBar();
-  $('inlineConfirm').classList.remove('on');
-  $('newsList').innerHTML='<div class="news-empty"><span class="ic">🔍</span>Recherche en cours…</div>';
-  showOverlay('Recherche d\'actualités…','Interrogation des endpoints','Étape 1');
-  try{
-    var result=await searchNews(q);
-    st.news=result.items;renderNews();
-    toast(result.items.length+' actualité(s) via '+result.endpoint,'ok');
-    log('✅ '+result.items.length+' actualités via '+result.endpoint,'s');
-    updateOverlay('Terminé',result.items.length+' actualité(s) trouvée(s)',100);
-    setTimeout(hideOverlay,900);
-  }catch(e){
-    log('Erreur : '+(e.message||e),'e');
-    toast('Erreur : '+(e.message||e),'err');
-    $('newsList').innerHTML='<div class="news-empty"><span class="ic">⚠️</span>'+esc(e.message||'Erreur inconnue')+'<br><br>Vérifie le journal technique.</div>';
-    updateOverlay('Erreur',e.message||'Erreur inconnue',100);
-    setTimeout(hideOverlay,2200);
-  }finally{
-    busy(btn,false);
-    btn.textContent='🔍 Chercher';
-  }
-  setStage(null);
-}
-</script>
-</body>
-</html>
+    blob
