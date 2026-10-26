@@ -1458,38 +1458,44 @@ async function analyzeNews(news,style,politicalVision){
 }
 
 async function genImage(prompt,refImages){
-  var body={
-    model:MODEL_IMAGE,
-    prompt:String(prompt).slice(0,1900),
-    n:1,
-    size:'1024x1792'
+  // 1. Construction du payload conforme à la doc Agnes
+  var body = {
+    model: MODEL_IMAGE,
+    prompt: String(prompt).slice(0, 1900),
+    size: '1K', 
+    ratio: '9:16', 
+    extra_body: {
+      response_format: 'b64_json' 
+    }
   };
-  if(refImages&&refImages.length)body.image=refImages;
-  var r=await agnesFetch(AGNES_API+'/images/generations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},4);
-  var d=await r.json();
-  var it=d.data&&d.data[0];
-  if(!it)throw new Error('Pas d\'image dans la réponse');
-  if(it.b64_json)return {dataUrl:'data:image/png;base64,'+it.b64_json,url:null};
-  if(it.url)return {dataUrl:null,url:it.url};
-  throw new Error('Format image inconnu');
-}
 
-async function fetchBlobWithProxies(url){
-  try{
-    var r=await fetch(url,{mode:'cors'});
-    if(r.ok)return await r.blob();
-  }catch(e){}
-  for(var i=0;i<CORS_PROXIES.length;i++){
-    try{
-      var proxied=CORS_PROXIES[i](url);
-      var r2=await fetch(proxied);
-      if(r2.ok){
-        var b=await r2.blob();
-        if(b&&b.size>1000)return b;
+  // 2. Ajout des images de référence pour l'édition (img2img)
+  if (refImages && refImages.length) {
+    body.image = refImages.map(function(img) {
+      if (typeof img === 'string' && img.startsWith('data:image/')) {
+        return img; 
       }
-    }catch(e2){}
+      if (typeof img === 'string' && (img.startsWith('http://') || img.startsWith('https://'))) {
+        return img;
+      }
+      console.warn('Format image non reconnu pour l\'édition:', img);
+      return img; 
+    });
   }
-  throw new Error('Impossible de récupérer l\'image (CORS)');
+
+  // 3. Appel à l'API
+  var r = await agnesFetch(AGNES_API + '/images/generations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }, 4);
+
+  var d = await r.json();
+  var it = d.data && d.data[0];
+  if (!it) throw new Error('Pas d\'image dans la réponse');
+  if (it.b64_json) return { dataUrl: 'data:image/png;base64,' + it.b64_json, url: null };
+  if (it.url) return { dataUrl: null, url: it.url };
+  throw new Error('Format image inconnu');
 }
 
 function dataURLToBlob(dataUrl){
