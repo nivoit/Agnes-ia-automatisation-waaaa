@@ -2,7 +2,7 @@
 
 # 🎬 NewsReel Studio
 
-> **Transformer l'actualité en un journal visuel généré par IA — satire, cinéma et engagement politique en 8 tableaux.**
+> **Transformer l'actualité en un journal visuel généré par IA.**
 
 [![Made with Love](https://img.shields.io/badge/Made%20with-%E2%9D%A4-red)](https://github.com)
 [![Single File](https://img.shields.io/badge/Single%20File-100%25%20HTML-blue)]()
